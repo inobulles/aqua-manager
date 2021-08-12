@@ -60,7 +60,7 @@ static uint64_t hash(const char* string) { // djb2 algorithm
 // some systems don't have a 'time' command, so we'll have to check for that if we don't want an error to be thrown
 
 #define FIND_TIMEIT "\nif [ $(which time) ]; then\n" \
-	"\t$TIMEIT=time\n" \
+	"\tTIMEIT=time\n" \
 	"fi\n\n"
 
 static int modify(void) {
