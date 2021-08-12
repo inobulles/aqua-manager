@@ -1,4 +1,5 @@
 
+#include <time.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -55,6 +56,12 @@ static uint64_t hash(const char* string) { // djb2 algorithm
 
 	return hash;
 }
+
+// some systems don't have a 'time' command, so we'll have to check for that if we don't want an error to be thrown
+
+#define FIND_TIMEIT "\nif [ $(which time) ]; then\n" \
+	"\t$TIMEIT=time\n" \
+	"fi\n\n"
 
 static int modify(void) {
 	printf("[AQUA Manager] Modifying project ...\n");
@@ -117,9 +124,10 @@ static int modify(void) {
 			
 			write_file("build.sh",
 				"#!/bin/sh\n"
-				"set -e\n\n"
-				"time cc main.c -I/usr/share/aqua/lib/c/ -shared -fPIC -o .package/native.bin\n"
-				"time iar --pack .package/ --output package.zpk"
+				"set -e\n"
+				FIND_TIMEIT
+				"$TIMEIT cc main.c -I/usr/share/aqua/lib/c/ -shared -fPIC -o .package/native.bin\n"
+				"$TIMEIT iar --pack .package/ --output package.zpk"
 			);
 
 			break;
@@ -138,9 +146,10 @@ static int modify(void) {
 			
 			write_file("build.sh",
 				"#!/bin/sh\n"
-				"set -e\n\n"
-				"time c++ main.cpp -shared -fPIC -o .package/native.bin\n"
-				"time iar --pack .package/ --output package.zpk"
+				"set -e\n"
+				FIND_TIMEIT
+				"$TIMEIT c++ main.cpp -shared -fPIC -o .package/native.bin\n"
+				"$TIMEIT iar --pack .package/ --output package.zpk"
 			);
 			
 			break;
