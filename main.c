@@ -119,7 +119,7 @@ static int modify(void) {
 				"#!/bin/sh\n"
 				"set -e\n\n"
 				"time cc main.c -I/usr/share/aqua/lib/c/ -shared -fPIC -o .package/native.bin\n"
-				"time iar --align 1 --pack .package/ --output package.zpk"
+				"time iar --pack .package/ --output package.zpk"
 			);
 
 			break;
@@ -140,7 +140,7 @@ static int modify(void) {
 				"#!/bin/sh\n"
 				"set -e\n\n"
 				"time c++ main.cpp -shared -fPIC -o .package/native.bin\n"
-				"time iar --align 1 --pack .package/ --output package.zpk"
+				"time iar --pack .package/ --output package.zpk"
 			);
 			
 			break;
