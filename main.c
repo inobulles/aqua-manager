@@ -126,7 +126,7 @@ static int modify(void) {
 				"#!/bin/sh\n"
 				"set -e\n"
 				FIND_TIMEIT
-				"$TIMEIT cc main.c -I/usr/share/aqua/lib/c/ -shared -fPIC -o .package/native.bin\n"
+				"$TIMEIT cc main.c -I/usr/local/share/aqua/lib/c/ -shared -fPIC -o .package/native.bin\n"
 				"$TIMEIT iar --pack .package/ --output package.zpk"
 			);
 
