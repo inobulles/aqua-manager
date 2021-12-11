@@ -30,7 +30,9 @@ Set the project type. This will affect the folder structure. Valid project types
 
 Properties are read in a `meta.json` JSON (with C comments) file in the root of the project directory. More information can be found in the ZPK standard, but here is a list of the properties and their default values:
 
-### unique
+### Properties necessary for the functioning of the app
+
+#### unique
 
 Set the `unique` value of the project. This is meant to be a string which uniquely identifies any package. The default value is set following this algorithm:
 
@@ -55,23 +57,33 @@ sprintf(unique, "%lx:%x", seconds, rand());
 
 where `srand` and `rand` are implementation-defined.
 
-### name
+#### start
+
+Set the `start` value of the project. Valid values are `zed`, `native`, and `system`. The default value is set in `DEFAULT_START` ("native").
+
+#### entry
+
+Set the `entry` value of the project. Valid values depend on the `start` value. The default value is set nowhere, but is `entry.zed` when the `start` value is set to `zed`, `entry.native` when the `start` value is set to `native`, and `entry.sh` when the `start` value is set to `system`.
+
+### Metadata properties
+
+#### name
 
 Set the name of the project. The default value is set in `DEFAULT_NAME` ("Untitled Project").
 
-### description
+#### description
 
 Set the description of the project. The default value is set in `DEFAULT_DESCRIPTION` ("Untitled project which has no title.").
 
-### version
+#### version
 
 Set the version of the project. The default value is set in `DEFAULT_VERSION` ("development").
 
-### author
+#### author
 
 Set the author name of the project. The default value will be the username of the current UID, or the value set in `DEFAULT_AUTHOR` ("Anonymousia de Bergerac-Fleur") if getting the username fails.
 
-### organization
+#### organization
 
 Set the organization name of the project. The default value will be the hostname of the current machine, or the value set in `DEFAULT_ORGANIZATION` ("Literally the CIA") if getting the hostname fails.
 

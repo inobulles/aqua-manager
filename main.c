@@ -24,20 +24,30 @@ typedef enum {
 
 #define DEFAULT_PATH "./"
 
+static type_t type = TYPE_UNCHANGED;
+static char* path = DEFAULT_PATH;
+
+// properties necessary for the functioning of the app
+
+#define DEFAULT_START "native" // for now...
+
+static char* unique = NULL;
+static char* start = NULL;
+static char* entry = NULL;
+
+// metadata properties
+
 #define DEFAULT_NAME "Untitled Project"
 #define DEFAULT_DESCRIPTION "Untitled project which has no title."
 #define DEFAULT_VERSION "development"
+
 #define DEFAULT_AUTHOR "Anonymousia de Bergerac-Fleur"
 #define DEFAULT_ORGANIZATION "Literally the CIA"
-
-static type_t type = TYPE_UNCHANGED;
-
-static char* path = DEFAULT_PATH;
-static char* unique = NULL;
 
 static char* name = NULL;
 static char* description = NULL;
 static char* version = NULL;
+
 static char* author = NULL;
 static char* organization = NULL;
 
@@ -196,7 +206,7 @@ static char* gen_organization(void) {
 	return buffer;
 }
 
-static char* json_string(cJSON* json, const char* key) {
+static char* json_str(cJSON* json, const char* key) {
 	const cJSON* item = cJSON_GetObjectItemCaseSensitive(json, key);
 
 	if (!item) {
@@ -247,16 +257,24 @@ static inline int layout(void) {
 		goto skip;
 	}
 
-	name = json_string(meta, "name");
-	description = json_string(meta, "description");
-	version = json_string(meta, "version");
-	
-	author = json_string(meta, "author");
-	organization = json_string(meta, "organization");
+	// metadata properties
 
-	unique = json_string(meta, "unique"); // put this after everything incase we need to call 'gen_unique'
+	name = json_str(meta, "name");
+	description = json_str(meta, "description");
+	version = json_str(meta, "version");
+	
+	author = json_str(meta, "author");
+	organization = json_str(meta, "organization");
+	
+	// properties necessary for the functioning of the app
+
+	unique = json_str(meta, "unique");
+	start = json_str(meta, "start");
+	entry = json_str(meta, "entry");
 
 skip:
+
+	// metadata properties
 
 	get_default_str(&name, DEFAULT_NAME);
 	get_default_str(&description, DEFAULT_DESCRIPTION);
@@ -265,7 +283,21 @@ skip:
 	get_default_func(&author, gen_author);
 	get_default_func(&organization, gen_organization);
 
+	// properties necessary for the functioning of the app
+
 	get_default_func(&unique, gen_unique); // put this after everything incase we need to call 'gen_unique'
+	get_default_str(&start, DEFAULT_START);
+
+	if (strcmp(start, "zed") == 0) get_default_str(&entry, "entry.zed");
+	else if (strcmp(start, "native") == 0) get_default_str(&entry, "entry.native");
+	else if (strcmp(start, "system") == 0) get_default_str(&entry, "entry.sh");
+
+	else {
+		fprintf(stderr, "[AQUA Manager] ERROR Unknown start value '%s'\n", start);
+		return -1;
+	}
+
+	// layout setup
 
 	printf("[AQUA Manager] Laying project out ...\n");
 
@@ -274,9 +306,13 @@ skip:
 		return -1;
 	}
 
-	if (unique) {
-		write_file(".package/unique", unique);
-	}
+	// properties necessary for the functioning of the app
+
+	write_file(".package/unique", unique);
+	write_file(".package/start", start);
+	write_file(".package/entry", entry);
+
+	// type-specific code
 
 	if (mkdir(".build", 0700) < 0 && errno != EEXIST) {
 		fprintf(stderr, "[AQUA Manager] ERROR Failed to create build directory at '%s/.build/'\n", path);
@@ -296,11 +332,14 @@ skip:
 
 	TYPE_LUT[type]();
 
-	if (name) write_file(".package/name", name);
-	if (description) write_file(".package/description", description);
-	if (version) write_file(".package/version", version);
-	if (author) write_file(".package/author", author);
-	if (organization) write_file(".package/organization", organization);
+	// metadata properties
+
+	write_file(".package/name", name);
+	write_file(".package/description", description);
+	write_file(".package/version", version);
+
+	write_file(".package/author", author);
+	write_file(".package/organization", organization);
 
 	printf("[AQUA Manager] Done\n");
 	return 0;
