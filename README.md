@@ -4,7 +4,7 @@ This repo contains the source for the AQUA project manager (command-line), which
 
 ## General usage
 
-`aqua-manager` runs in two different modes; creation mode, which is used to create new projects, and modification mode, which is used to modify properties of preexisting projects. In creation mode, properties which are not explicitly given by the user will always be set to sensible default values, whereas in modification mode, properties will always be unchanged unless explicitly given by the user. `aqua-manager` runs in modification mode by default.
+`aqua-manager` runs in two different modes; creation mode, which is used to create new projects, and layout mode, which is used to lay the file of an existing project out. In creation mode, properties will always be set to sensible default values, unless a project already exists in the target path, in which case `aqua-manager` acts as if it was in layout mode. `aqua-manager` runs in modification mode by default.
 
 ## Command-line arguments
 
@@ -12,13 +12,25 @@ Here is a list of all command-line arguments that can be passed to `aqua-manager
 
 ### --create
 
-Switch to creation mode. This will create the folder structure and files of the whole project.
+Switch to creation mode. This will create the folder structure and layout the files (with default values) of the whole project.
+
+### --layout
+
+Switch to layout mode (technically useless as this is the default).
 
 ### --path
 
-The path in which to create a project when in creation mode or the path to the project in which to modify properties when in modification mode. The default value is set in `DEFAULT_PATH` and is `./`.
+The path in which to create a project when in creation mode or the path to the project to layout when in layout mode. The default value is set in `DEFAULT_PATH` and is `./`.
 
-### --unique
+### --type
+
+Set the project type. This will affect the folder structure. Valid project types are `custom`, `zasm`, `amber`, `native-c`, and `native-c++`. As of aquaBSD 1.0 Alps, `native-c` is the default, but it may end up being `amber` in the future.
+
+## Recognized properties
+
+Properties are read in a `meta.json` JSON (with C comments) file in the root of the project directory. More information can be found in the ZPK standard, but here is a list of the properties and their default values:
+
+### unique
 
 Set the `unique` value of the project. This is meant to be a string which uniquely identifies any package. The default value is set following this algorithm:
 
@@ -43,27 +55,23 @@ sprintf(unique, "%lx:%x", seconds, rand());
 
 where `srand` and `rand` are implementation-defined.
 
-### --type
-
-Set the project type. This will affect the folder structure. Valid project types are `zasm`, `amber`, `native-c`, and `native-c++`. As of aquaBSD 1.0 Alps, `native-c` is the default, but it will end up being `amber` in the future.
-
-### --name
+### name
 
 Set the name of the project. The default value is set in `DEFAULT_NAME` ("Untitled Project").
 
-### --description
+### description
 
 Set the description of the project. The default value is set in `DEFAULT_DESCRIPTION` ("Untitled project which has no title.").
 
-### --version
+### version
 
 Set the version of the project. The default value is set in `DEFAULT_VERSION` ("development").
 
-### --author
+### author
 
 Set the author name of the project. The default value will be the username of the current UID, or the value set in `DEFAULT_AUTHOR` ("Anonymousia de Bergerac-Fleur") if getting the username fails.
 
-### --organization
+### organization
 
 Set the organization name of the project. The default value will be the hostname of the current machine, or the value set in `DEFAULT_ORGANIZATION` ("Literally the CIA") if getting the hostname fails.
 
