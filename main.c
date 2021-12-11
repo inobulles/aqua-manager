@@ -8,15 +8,18 @@
 #include <pwd.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <cjson/cJSON.h>
 
 typedef enum {
-	ACTION_MODIFY, ACTION_CREATE
+	ACTION_CREATE, ACTION_LAYOUT
 } action_t;
 
 typedef enum {
 	TYPE_UNCHANGED = 0,
+	TYPE_CUSTOM,
 	TYPE_ZASM, TYPE_AMBER,
 	TYPE_NATIVE_C, TYPE_NATIVE_CPP,
+	TYPE_LEN
 } type_t;
 
 #define DEFAULT_PATH "./"
@@ -30,20 +33,50 @@ typedef enum {
 static type_t type = TYPE_UNCHANGED;
 
 static char* path = DEFAULT_PATH;
-static char* unique = (char*) 0;
+static char* unique = NULL;
 
-static char* name = (char*) 0;
-static char* description = (char*) 0;
-static char* version = (char*) 0;
-static char* author = (char*) 0;
-static char* organization = (char*) 0;
+static char* name = NULL;
+static char* description = NULL;
+static char* version = NULL;
+static char* author = NULL;
+static char* organization = NULL;
+
+static char* read_file(const char* path) {
+	FILE* fp = fopen(path, "rb");
+
+	if (!fp) {
+		return NULL; // return 'NULL' if file don't exist
+	}
+
+	fseek(fp, 0, SEEK_END);
+
+	unsigned bytes = ftell(fp);
+	char* buffer = calloc(1, bytes + 1); // create null-byte
+
+	rewind(fp);
+	
+	if (fread(buffer, 1, bytes, fp) != bytes) {
+		free(buffer);
+		buffer = NULL; // return 'NULL' if something went wrong reading
+	}
+
+	fclose(fp);
+	return buffer;
+}
 
 static void write_file(const char* path, const char* value) {
-	FILE* file = fopen(path, "wb");
-	if (!file) return; // if something goes wrong, too bad, just ignore it
+	if (!value) {
+		return;
+	}
 
-	fprintf(file, "%s", value);
-	fclose(file);
+	FILE* fp = fopen(path, "wb");
+	
+	if (!fp) {
+		return; // if something goes wrong, too bad, just ignore it
+	}
+
+	fprintf(fp, "%s", value);
+	fclose(fp);
 }
 
 static uint64_t hash(const char* string) { // djb2 algorithm
@@ -63,17 +96,182 @@ static uint64_t hash(const char* string) { // djb2 algorithm
 	"\tTIMEIT=time\n" \
 	"fi\n\n"
 
-static int modify(void) {
-	printf("[AQUA Manager] Modifying project ...\n");
+static void template_nothing(void) {
+	// do nothing lol
+}
+
+static void template_zasm(void) {
+	write_file("main.zasm",
+		"%hello_world \"Hello world!\" xa 0%\n\n"
+		":main:\n\n"
+		"\tmov a0 hello_world\n"
+		"\tcal g0 print"
+	);
+
+	write_file(".build/source", "main.zasm");
+	write_file(".build/type", "zasm");
+}
+
+static void template_amber(void) {
+	write_file("main.a",
+		"kfunc print \"Hello world!\\n\";"
+	);
+	
+	write_file(".build/source", "main.a");
+	write_file(".build/type", "amber");
+}
+
+static void template_native_c(void) {
+	write_file(".package/start", "native");
+	
+	write_file("main.c",
+		"#include <stdio.h>\n\n"
+		"int main(void) {\n"
+		"\tprintf(\"Hello world!\\n\");\n"
+		"\treturn 0;\n"
+		"}"
+	);
+	
+	write_file("build.sh",
+		"#!/bin/sh\n"
+		"set -e\n"
+		FIND_TIMEIT
+		"$TIMEIT cc main.c -I/usr/local/share/aqua/lib/c/ -shared -fPIC -o .package/native.bin\n"
+		"$TIMEIT aqua-manager --layout\n"
+		"$TIMEIT iar --pack .package/ --output package.zpk"
+	);
+}
+
+static void template_native_cpp(void) {
+	write_file(".package/start", "native");
+
+	write_file("main.cpp",
+		"#include <iostream>\n\n"
+		"int main(void) {\n"
+		"\tstd::cout << \"Hello world!\" << std::endl;\n"
+		"\treturn 0;\n"
+		"}"
+	);
+	
+	write_file("build.sh",
+		"#!/bin/sh\n"
+		"set -e\n"
+		FIND_TIMEIT
+		"$TIMEIT c++ main.cpp -shared -fPIC -o .package/native.bin\n"
+		"$TIMEIT aqua-manager --layout\n"
+		"$TIMEIT iar --pack .package/ --output package.zpk"
+	);
+}
+
+static char* gen_unique(void) {
+	int64_t seconds = time(NULL);
+	srand(seconds ^ hash(organization) ^ hash(author) ^ hash(name));
+
+	char* buffer = malloc(1024 /* this should be enough */); // don't worry about freeing this
+	sprintf(buffer, "%lx:%x", seconds, rand());
+
+	return buffer;
+}
+
+static char* gen_author(void) {
+	char* buffer = DEFAULT_AUTHOR;
+	
+	struct passwd* passwd = getpwuid(getuid());
+	
+	if (passwd) {
+		buffer = strdup(passwd->pw_name); // don't worry about freeing this either
+	}
+
+	return buffer;
+}
+
+static char* gen_organization(void) {
+	char* buffer = DEFAULT_ORGANIZATION;
+
+	int bytes = sysconf(_SC_HOST_NAME_MAX) + 1;
+
+	buffer = (char*) malloc(bytes); // don't worry about freeing this either either
+	gethostname(buffer, bytes);
+
+	return buffer;
+}
+
+static char* json_string(cJSON* json, const char* key) {
+	const cJSON* item = cJSON_GetObjectItemCaseSensitive(json, key);
+
+	if (!item) {
+		return NULL;
+	}
+
+	if (!cJSON_IsString(item) || !item->valuestring) {
+		fprintf(stderr, "[AQUA Manager] WARNING '%s' is not a string\n", key);
+		return NULL;
+	}
+
+	return item->valuestring;
+}
+
+static void get_default_str(char** str_ref, const char* _default) {
+	if (!*str_ref) {
+		*str_ref = (char*) _default;
+	}
+}
+
+static void get_default_func(char** str_ref, char* (*func) (void)) {
+	if (!*str_ref) {
+		*str_ref = func();
+	}
+}
+
+static inline int layout(void) {
+	printf("[AQUA Manager] Changing to project path '%s' ...\n", path);
 
 	if (chdir(path) < 0) {
 		fprintf(stderr, "[AQUA Manager] ERROR Project path '%s' doesn't seem to exist\n", path);
-		return 1;
+		return -1;
 	}
+
+	printf("[AQUA Manager] Parsing 'meta.json' if it exists ...\n");
+	char* meta_raw = read_file("meta.json");
+
+	if (!meta_raw) {
+		fprintf(stderr, "[AQUA Manager] WARNING Could not find 'meta.json'; continuing with defaults ...\n");
+		goto skip;
+	}
+
+	cJSON_Minify(meta_raw); // XXX to remove JSON comments
+	cJSON* meta = cJSON_Parse(meta_raw);
+
+	if (!meta) {
+		fprintf(stderr, "[AQUA Manager] WARNING Could not parse 'meta.json'; continuing with defaults ...\n");
+		goto skip;
+	}
+
+	name = json_string(meta, "name");
+	description = json_string(meta, "description");
+	version = json_string(meta, "version");
+	
+	author = json_string(meta, "author");
+	organization = json_string(meta, "organization");
+
+	unique = json_string(meta, "unique"); // put this after everything incase we need to call 'gen_unique'
+
+skip:
+
+	get_default_str(&name, DEFAULT_NAME);
+	get_default_str(&description, DEFAULT_DESCRIPTION);
+	get_default_str(&version, DEFAULT_VERSION);
+	
+	get_default_func(&author, gen_author);
+	get_default_func(&organization, gen_organization);
+
+	get_default_func(&unique, gen_unique); // put this after everything incase we need to call 'gen_unique'
+
+	printf("[AQUA Manager] Laying project out ...\n");
 
 	if (mkdir(".package", 0700) < 0 && errno != EEXIST) {
 		fprintf(stderr, "[AQUA Manager] ERROR Failed to create package directory at '%s/.package/'\n", path);
-		return 1;
+		return -1;
 	}
 
 	if (unique) {
@@ -82,93 +280,27 @@ static int modify(void) {
 
 	if (mkdir(".build", 0700) < 0 && errno != EEXIST) {
 		fprintf(stderr, "[AQUA Manager] ERROR Failed to create build directory at '%s/.build/'\n", path);
-		return 1;
+		return -1;
 	}
 
-	switch (type) {
-		case TYPE_ZASM: {
-			write_file("main.zasm",
-				"%hello_world \"Hello world!\" xa 0%\n\n"
-				":main:\n\n"
-				"\tmov a0 hello_world\n"
-				"\tcal g0 print"
-			);
+	void (*TYPE_LUT[TYPE_LEN]) (void);
 
-			write_file(".build/source", "main.zasm");
-			write_file(".build/type", "zasm");
-
-			break;
-		}
-
-		case TYPE_AMBER: {
-			write_file("main.a",
-				"kfunc print \"Hello world!\\n\";"
-			);
-			
-			write_file(".build/source", "main.a");
-			write_file(".build/type", "amber");
-
-			break;
-		}
-
-		case TYPE_NATIVE_C: {
-			write_file(".package/start", "native");
-			
-			write_file("main.c",
-				"#include <stdio.h>\n\n"
-				"int main(void) {\n"
-				"\tprintf(\"Hello world!\\n\");\n"
-				"\treturn 0;\n"
-				"}"
-			);
-			
-			write_file("build.sh",
-				"#!/bin/sh\n"
-				"set -e\n"
-				FIND_TIMEIT
-				"$TIMEIT cc main.c -I/usr/local/share/aqua/lib/c/ -shared -fPIC -o .package/native.bin\n"
-				"$TIMEIT iar --pack .package/ --output package.zpk"
-			);
-
-			break;
-		}
-		
-		case TYPE_NATIVE_CPP: {
-			write_file(".package/start", "native");
-
-			write_file("main.cpp",
-				"#include <iostream>\n\n"
-				"int main(void) {\n"
-				"\tstd::cout << \"Hello world!\" << std::endl;\n"
-				"\treturn 0;\n"
-				"}"
-			);
-			
-			write_file("build.sh",
-				"#!/bin/sh\n"
-				"set -e\n"
-				FIND_TIMEIT
-				"$TIMEIT c++ main.cpp -shared -fPIC -o .package/native.bin\n"
-				"$TIMEIT iar --pack .package/ --output package.zpk"
-			);
-			
-			break;
-		}
-
-		case TYPE_UNCHANGED:
-		default: break;
+	for (int i = 0; i < sizeof(TYPE_LUT) / sizeof(*TYPE_LUT); i++) {
+		TYPE_LUT[i] = template_nothing;
 	}
 
-	if (mkdir(".package/meta", 0700) < 0 && errno != EEXIST) {
-		fprintf(stderr, "[AQUA Manager] ERROR Failed to create meta directory at '%s/.package/meta/'\n", path);
-		return 1;
-	}
+	TYPE_LUT[TYPE_ZASM] = template_zasm;
+	TYPE_LUT[TYPE_AMBER] = template_amber;
+	TYPE_LUT[TYPE_NATIVE_C] = template_native_c;
+	TYPE_LUT[TYPE_NATIVE_CPP] = template_native_cpp;
 
-	if (name) write_file(".package/meta/name", name);
-	if (description) write_file(".package/meta/description", description);
-	if (version) write_file(".package/meta/version", version);
-	if (author) write_file(".package/meta/author", author);
-	if (organization) write_file(".package/meta/organization", organization);
+	TYPE_LUT[type]();
+
+	if (name) write_file(".package/name", name);
+	if (description) write_file(".package/description", description);
+	if (version) write_file(".package/version", version);
+	if (author) write_file(".package/author", author);
+	if (organization) write_file(".package/organization", organization);
 
 	printf("[AQUA Manager] Done\n");
 	return 0;
@@ -177,105 +309,80 @@ static int modify(void) {
 static int create(void) {
 	printf("[AQUA Manager] Creating new project ...\n");
 
-	printf("[AQUA Manager] Setting defaults ...\n");
-
 	if (!type) {
 		type = TYPE_NATIVE_C;
 	}
 
-	if (!name) name = DEFAULT_NAME;
-	if (!description) description = DEFAULT_DESCRIPTION;
-	if (!version) version = DEFAULT_VERSION;
-	
-	if (!author) {
-		author = DEFAULT_AUTHOR;
-		
-		struct passwd* passwd = getpwuid(getuid());
-		if (passwd) author = strdup(passwd->pw_name); // don't worry about freeing this either
-	}
-
-	if (!organization) {
-		organization = DEFAULT_ORGANIZATION;
-
-		int bytes = sysconf(_SC_HOST_NAME_MAX) + 1;
-
-		organization = (char*) malloc(bytes); // don't worry about freeing this either either
-		gethostname(organization, bytes);
-	}
-
-	if (!unique) {
-		int64_t seconds = time(NULL);
-		srand(seconds ^ hash(organization) ^ hash(author) ^ hash(name));
-
-		unique = (char*) malloc(1024 /* this should be enough */); // don't worry about freeing this
-		sprintf(unique, "%lx:%x", seconds, rand());
-	}
-	
 	printf("[AQUA Manager] Creating project files ...\n");
 
 	if (mkdir(path, 0700) < 0 && errno != EEXIST) {
 		fprintf(stderr, "[AQUA Manager] ERROR Failed to create project directory at '%s'\n", path);
-		return 1;
+		return -1;
 	}
 
-	return modify();
+	return layout();
 }
 
 int main(int argc, char** argv) {
-	action_t action = ACTION_MODIFY;
+	action_t action = ACTION_LAYOUT;
 
 	printf("[AQUA Manager] Parsing arguments ...\n");
 
 	for (int i = 1; i < argc; i++) {
-		if (strncmp(argv[i], "--", 2) == 0) {
-			char* option = argv[i] + 2;
+		if (strncmp(argv[i], "--", 2)) {
+			fprintf(stderr, "[AQUA Manager] ERROR Unexpected argument '%s'\n", argv[i]);
+			return -1;
+		}
 
-			if (strcmp(option, "create") == 0) {
-				if (i != 1) {
-					fprintf(stderr, "[AQUA Manager] ERROR '--create' option must be the first argument\n");
-					return 1;
-				}
-				
-				action = ACTION_CREATE;
+		char* option = argv[i] + 2;
+
+		if (strcmp(option, "create") == 0) {
+			if (i != 1) {
+				fprintf(stderr, "[AQUA Manager] ERROR '--create' option must be the first argument\n");
+				return -1;
+			}
+			
+			action = ACTION_CREATE;
+		}
+
+		else if (strcmp(option, "layout") == 0) {
+			if (i != 1) {
+				fprintf(stderr, "[AQUA Manager] ERROR '--layout' option must be the first argument\n");
+				return -1;
 			}
 
-			else if (strcmp(option, "path") == 0) path = argv[++i];
-			else if (strcmp(option, "unique") == 0) unique = argv[++i];
+			action = ACTION_LAYOUT;
+		}
 
-			else if (strcmp(option, "name") == 0) name = argv[++i];
-			else if (strcmp(option, "description") == 0) description = argv[++i];
-			else if (strcmp(option, "version") == 0) version = argv[++i];
-			else if (strcmp(option, "author") == 0) author = argv[++i];
-			else if (strcmp(option, "organization") == 0) organization = argv[++i];
+		else if (strcmp(option, "path") == 0) {
+			path = argv[++i];
+		}
 
-			else if (strcmp(option, "type") == 0) {
-				char* type_string = argv[++i];
+		else if (strcmp(option, "type") == 0) {
+			char* type_string = argv[++i];
 
-				if (strcmp(type_string, "zasm") == 0) type = TYPE_ZASM;
-				else if (strcmp(type_string, "amber") == 0) type = TYPE_AMBER;
+			if (strcmp(type_string, "custom") == 0) type = TYPE_CUSTOM;
 
-				else if (strcmp(type_string, "native-c") == 0) type = TYPE_NATIVE_C;
-				else if (strcmp(type_string, "native-c++") == 0) type = TYPE_NATIVE_CPP;
+			else if (strcmp(type_string, "zasm") == 0) type = TYPE_ZASM;
+			else if (strcmp(type_string, "amber") == 0) type = TYPE_AMBER;
 
-				else {
-					fprintf(stderr, "[AQUA Manager] ERROR Type '%s' is unknown\n", type_string);
-					return 1;
-				}
-			}
+			else if (strcmp(type_string, "native-c") == 0) type = TYPE_NATIVE_C;
+			else if (strcmp(type_string, "native-c++") == 0) type = TYPE_NATIVE_CPP;
 
 			else {
-				fprintf(stderr, "[AQUA Manager] ERROR Option '--%s' is unknown\n", option);
-				return 1;
+				fprintf(stderr, "[AQUA Manager] ERROR Type '%s' is unknown\n", type_string);
+				return -1;
 			}
+		}
 
-		} else {
-			fprintf(stderr, "[AQUA Manager] ERROR Unexpected argument '%s'\n", argv[i]);
-			return 1;
+		else {
+			fprintf(stderr, "[AQUA Manager] ERROR Option '--%s' is unknown\n", option);
+			return -1;
 		}
 	}
 
-	if (action == ACTION_MODIFY) return modify();
+	if (action == ACTION_LAYOUT) return layout();
 	if (action == ACTION_CREATE) return create();
 	
-	return 1;
+	return -1;
 }
