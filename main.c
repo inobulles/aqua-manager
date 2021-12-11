@@ -51,6 +51,11 @@ static char* version = NULL;
 static char* author = NULL;
 static char* organization = NULL;
 
+// truly optional metadata properties
+
+static char* website = NULL;
+static char* icon = NULL;
+
 static char* read_file(const char* path) {
 	FILE* fp = fopen(path, "rb");
 
@@ -265,7 +270,12 @@ static inline int layout(void) {
 	
 	author = json_str(meta, "author");
 	organization = json_str(meta, "organization");
-	
+
+	// truly optional metadata properties
+
+	website = json_str(meta, "website");
+	icon = json_str(meta, "icon");
+
 	// properties necessary for the functioning of the app
 
 	unique = json_str(meta, "unique");
@@ -306,12 +316,6 @@ skip:
 		return -1;
 	}
 
-	// properties necessary for the functioning of the app
-
-	write_file(".package/unique", unique);
-	write_file(".package/start", start);
-	write_file(".package/entry", entry);
-
 	// type-specific code
 
 	if (mkdir(".build", 0700) < 0 && errno != EEXIST) {
@@ -332,14 +336,32 @@ skip:
 
 	TYPE_LUT[type]();
 
+	// write properties
+
+	if (chdir(".package") < 0) {
+		fprintf(stderr, "[AQUA Manager] ERROR Failed to move into '.package' to write properties\n");
+		return -1;
+	}
+
+	// properties necessary for the functioning of the app
+
+	write_file("unique", unique);
+	write_file("start", start);
+	write_file("entry", entry);
+
 	// metadata properties
 
-	write_file(".package/name", name);
-	write_file(".package/description", description);
-	write_file(".package/version", version);
+	write_file("name", name);
+	write_file("description", description);
+	write_file("version", version);
 
-	write_file(".package/author", author);
-	write_file(".package/organization", organization);
+	write_file("author", author);
+	write_file("organization", organization);
+
+	// truly optional metadata properties
+
+	write_file("website", website);
+	write_file("icon", icon);
 
 	printf("[AQUA Manager] Done\n");
 	return 0;
