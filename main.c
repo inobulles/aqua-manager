@@ -151,7 +151,7 @@ static void template_native_c(void) {
 		"#!/bin/sh\n"
 		"set -e\n"
 		FIND_TIMEIT
-		"$TIMEIT cc main.c -I/usr/local/share/aqua/lib/c/ -shared -fPIC -o .package/native.bin\n"
+		"$TIMEIT cc main.c -I/usr/local/share/aqua/lib/c/ -shared -fPIC -o .package/entry.native\n"
 		"$TIMEIT aqua-manager --layout\n"
 		"$TIMEIT iar --pack .package/ --output package.zpk"
 	);
@@ -172,7 +172,7 @@ static void template_native_cpp(void) {
 		"#!/bin/sh\n"
 		"set -e\n"
 		FIND_TIMEIT
-		"$TIMEIT c++ main.cpp -shared -fPIC -o .package/native.bin\n"
+		"$TIMEIT c++ main.cpp -shared -fPIC -o .package/entry.native\n"
 		"$TIMEIT aqua-manager --layout\n"
 		"$TIMEIT iar --pack .package/ --output package.zpk"
 	);
