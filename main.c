@@ -140,7 +140,7 @@ static void template_native_c(void) {
 	write_file(".package/start", "native");
 	
 	write_file("main.c",
-		"#include <stdio.h>\n\n"
+		"#include <root.h>\n\n"
 		"int main(void) {\n"
 		"\tprintf(\"Hello world!\\n\");\n"
 		"\treturn 0;\n"
